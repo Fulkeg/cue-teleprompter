@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cue">
+<title>Cue — Teleprompter</title>
+<link rel="manifest" id="pwa-manifest">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0a;color:#f5f3ef;font-family:'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--red:#e8483a;--bg:#0a0a0a;--surface:#141414;--border:#262626;--muted:#7a7a7a;--dim:#5a5a5a;--faint:#3a3a3a}
+
+  /* ---- SETUP ---- */
+  #screen-setup{position:absolute;inset:0;overflow-y:auto;padding:40px 24px 60px;display:flex;flex-direction:column;align-items:center}
+  .setup-inner{width:100%;max-width:600px}
+  .badge{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .badge-dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 1.6s ease-in-out infinite}
+  .badge-text{font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+  .logo{font-size:clamp(28px,6vw,38px);font-weight:800;color:#f5f3ef;letter-spacing:-.02em;margin-bottom:28px}
+  label.field-label{display:block;font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+  textarea#script-input{width:100%;min-height:200px;resize:vertical;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:16px;line-height:1.6;color:#f5f3ef;font-family:inherit;outline:none;margin-bottom:8px}
+  textarea#script-input:focus{border-color:#444}
+  .word-count{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:20px}
+  .mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+  .mode-btn{padding:10px 6px;border-radius:8px;font-size:12px;text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:#a0a0a0;transition:all .15s}
+  .mode-btn.active{background:rgba(232,72,58,.13);border-color:var(--red);color:var(--red)}
+  .mode-hint{font-size:11px;color:var(--dim);margin-bottom:4px;min-height:16px}
+  .mode-warn{font-size:11px;color:var(--red);margin-bottom:8px;min-height:14px}
+  .slider-row{margin-bottom:20px}
+  .slider-header{display:flex;justify-content:space-between;margin-bottom:8px}
+  .slider-label{font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .slider-val{font-size:13px;color:#f5f3ef}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:3px;background:#2a2a2a;border-radius:2px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--red);cursor:pointer;border:2px solid var(--bg);box-shadow:0 0 0 1px var(--red)}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--red);cursor:pointer;border:2px solid var(--bg)}
+  .slider-ends{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:4px}
+  .toggle-row{display:flex;gap:10px;margin-bottom:28px;flex-wrap:wrap}
+  .toggle-btn{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:#a0a0a0;transition:all .15s}
+  .toggle-btn.active{background:rgba(232,72,58,.13);border-color:var(--red);color:var(--red)}
+  .start-btn{width:100%;padding:16px;border-radius:10px;font-size:13px;letter-spacing:.1em;font-weight:700;text-transform:uppercase;cursor:pointer;border:none;background:var(--red);color:var(--bg);display:flex;align-items:center;justify-content:center;gap:10px;transition:opacity .15s}
+  .start-btn:disabled{background:#262626;color:var(--dim);cursor:not-allowed}
+  .shortcut-hint{text-align:center;font-size:11px;color:var(--dim);margin-top:14px}
+
+  /* ---- PROMPTER ---- */
+  #screen-prompter{position:absolute;inset:0;display:none;overflow:hidden;background:var(--bg)}
+  #scroll-area{position:absolute;inset:0;overflow:hidden}
+  #text-wrap{padding-left:clamp(24px,6vw,80px);padding-right:clamp(24px,6vw,80px);padding-bottom:60vh;white-space:pre-wrap;will-change:transform;font-weight:700;line-height:1.5;color:#f5f3ef}
+  #text-wrap.mirrored{transform:scaleX(-1)}
+  .cue-word{transition:opacity .25s}
+  .reading-line{position:absolute;left:0;right:0;display:flex;align-items:center;padding:0 20px;pointer-events:none;transform:translateY(-50%)}
+  .reading-dot{width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:10px;animation:pulse 1.6s ease-in-out infinite;flex-shrink:0}
+  .reading-track{flex:1;height:1px;background:linear-gradient(90deg,var(--red),rgba(232,72,58,.3),transparent)}
+  .hud{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;transition:opacity .35s,transform .35s}
+  .hud.top{top:0;background:linear-gradient(180deg,rgba(10,10,10,.85),transparent)}
+  .hud.bottom{bottom:0;background:linear-gradient(0deg,rgba(10,10,10,.85),transparent);justify-content:center;gap:12px}
+  .hud.hidden{opacity:0;pointer-events:none}
+  .hud.top.hidden{transform:translateY(-8px)}
+  .hud.bottom.hidden{transform:translateY(8px)}
+  .hud-info{font-size:12px;color:#a0a0a0;display:flex;align-items:center;gap:6px}
+  .speak-dot{width:6px;height:6px;border-radius:50%;background:var(--faint);flex-shrink:0;transition:background .2s}
+  .speak-dot.active{background:#4ade80}
+  .ctrl-btn{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:#f5f3ef;flex-shrink:0;font-size:0}
+  .ctrl-btn.primary{width:56px;height:56px;background:var(--red);border-color:var(--red);color:var(--bg)}
+  .ctrl-btn.mirror-active{background:rgba(232,72,58,.13);border-color:var(--red);color:var(--red)}
+  .icon-btn{padding:8px;cursor:pointer;color:#a0a0a0;background:none;border:none;font-size:0}
+  .overlay{position:absolute;inset:0;background:rgba(10,10,10,.92);display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .countdown-num{font-size:clamp(80px,25vw,140px);font-weight:800;color:var(--red)}
+  .error-box{max-width:340px;text-align:center;padding:0 24px}
+  .error-msg{font-size:14px;line-height:1.65;color:#f5f3ef;margin-bottom:24px}
+  .err-btn{width:100%;padding:14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px;border:none}
+  .err-btn.primary{background:var(--red);color:var(--bg)}
+  .err-btn.secondary{background:var(--surface);color:#f5f3ef;border:1px solid var(--border)}
+  .err-btn.ghost{background:transparent;color:var(--muted)}
+  .finished-tag{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;padding:6px 14px;border-radius:20px;background:var(--surface);color:#a0a0a0;border:1px solid var(--border)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.28}}
+
+  /* SVG icons (inline) */
+  .svg-icon{display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .svg-icon.sm{width:16px;height:16px}
+</style>
+</head>
+<body>
+
+<!-- ===================== SETUP SCREEN ===================== -->
+<div id="screen-setup">
+<div class="setup-inner">
+  <div class="badge"><span class="badge-dot"></span><span class="badge-text">Stage Ready</span></div>
+  <div class="logo">Cue</div>
+
+  <label class="field-label" for="script-input">Script</label>
+  <textarea id="script-input" spellcheck="false" placeholder="Paste your script here…">This is your teleprompter. Paste your own script in here, then choose how it should scroll.
+
+Timed mode scrolls at a fixed pace you set yourself. Pause on silence scrolls while you're talking and freezes the moment you stop. Live tracking listens to what you actually say and follows your exact place in the script, pauses and all.
+
+Good luck out there.</textarea>
+  <div class="word-count"><span id="wc-words">-- words</span><span id="wc-time"></span></div>
+
+  <label class="field-label">Scroll Mode</label>
+  <div class="mode-grid">
+    <button class="mode-btn active" data-mode="timed" onclick="setMode('timed')">Timed</button>
+    <button class="mode-btn" data-mode="silence" onclick="setMode('silence')">Pause on silence</button>
+    <button class="mode-btn" data-mode="voice" onclick="setMode('voice')">Live tracking</button>
+  </div>
+  <div class="mode-hint" id="mode-hint">Scrolls at a fixed pace you set below.</div>
+  <div class="mode-warn" id="mode-warn"></div>
+
+  <div class="slider-row" id="wpm-row">
+    <div class="slider-header">
+      <span class="slider-label" id="wpm-label">Reading speed</span>
+      <span class="slider-val"><span id="wpm-val">150</span> wpm</span>
+    </div>
+    <input type="range" id="wpm-slider" min="60" max="400" step="5" value="150" oninput="onWpmChange(this.value)">
+    <div class="slider-ends"><span>slow</span><span>fast</span></div>
+  </div>
+
+  <div class="slider-row" id="sens-row" style="display:none">
+    <div class="slider-header">
+      <span class="slider-label">Mic sensitivity</span>
+      <span class="slider-val"><span id="sens-val">55</span></span>
+    </div>
+    <input type="range" id="sens-slider" min="1" max="100" step="1" value="55" oninput="onSensChange(this.value)">
+    <div class="slider-ends"><span>needs louder voice</span><span>picks up quiet voice</span></div>
+  </div>
+
+  <div class="slider-row">
+    <div class="slider-header">
+      <span class="slider-label">Text size</span>
+      <span class="slider-val"><span id="fs-val">52</span>px</span>
+    </div>
+    <input type="range" id="fs-slider" min="28" max="96" step="2" value="52" oninput="onFsChange(this.value)">
+  </div>
+
+  <div class="toggle-row">
+    <button class="toggle-btn" id="mirror-btn" onclick="toggleMirror()">
+      <svg class="svg-icon sm" viewBox="0 0 24 24"><path d="M12 3v18M5 7H2m3 5H1m4 5H2M19 7h3m-3 5h4m-4 5h3"/></svg>
+      Mirror
+    </button>
+    <button class="toggle-btn active" id="countdown-btn" onclick="toggleCountdown()">
+      3-2-1 countdown
+    </button>
+  </div>
+
+  <button class="start-btn" id="start-btn" onclick="enterPrompter()" disabled>
+    <svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>
+    Start
+  </button>
+  <div class="shortcut-hint">Space to pause · ↑↓ speed · M mirror · Esc exit</div>
+</div>
+</div>
+
+<!-- ===================== PROMPTER SCREEN ===================== -->
+<div id="screen-prompter">
+  <div id="scroll-area" onclick="onPrompterTap(event)">
+    <div id="text-wrap"></div>
+  </div>
+
+  <div class="reading-line" id="reading-line">
+    <div class="reading-dot"></div>
+    <div class="reading-track"></div>
+  </div>
+
+  <!-- Countdown overlay -->
+  <div class="overlay" id="overlay-countdown" style="display:none">
+    <div class="countdown-num" id="countdown-num">3</div>
+  </div>
+
+  <!-- Mic error overlay -->
+  <div class="overlay" id="overlay-error" style="display:none">
+    <div class="error-box">
+      <div class="error-msg" id="error-msg"></div>
+      <button class="err-btn primary" onclick="retryVoice()">Try again</button>
+      <button class="err-btn secondary" onclick="continueWithoutVoice()">Continue in Timed mode</button>
+      <button class="err-btn ghost" onclick="exitPrompter()">Back to setup</button>
+    </div>
+  </div>
+
+  <!-- Top HUD -->
+  <div class="hud top" id="hud-top">
+    <button class="icon-btn" onclick="exitPrompter()" aria-label="Exit">
+      <svg class="svg-icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="hud-info" id="hud-info">
+      <span class="speak-dot" id="speak-dot" style="display:none"></span>
+      <span id="hud-text">0:00</span>
+    </div>
+    <button class="icon-btn" onclick="toggleFullscreen()" aria-label="Fullscreen" id="fs-btn">
+      <svg class="svg-icon" id="fs-icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+    </button>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="hud bottom" id="hud-bottom">
+    <button class="ctrl-btn" id="btn-minus" onclick="adjustWpm(-10)" aria-label="Slower">
+      <svg class="svg-icon" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <button class="ctrl-btn" onclick="restartScroll()" aria-label="Restart">
+      <svg class="svg-icon" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+    </button>
+    <button class="ctrl-btn primary" id="btn-play" onclick="togglePlay()" aria-label="Play/Pause">
+      <svg class="svg-icon" id="play-icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="ctrl-btn" id="btn-mirror" onclick="toggleMirrorInPrompter()" aria-label="Mirror">
+      <svg class="svg-icon" viewBox="0 0 24 24"><path d="M12 3v18M5 7H2m3 5H1m4 5H2M19 7h3m-3 5h4m-4 5h3"/></svg>
+    </button>
+    <button class="ctrl-btn" id="btn-plus" onclick="adjustWpm(10)" aria-label="Faster">
+      <svg class="svg-icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <div class="finished-tag" id="finished-tag" style="display:none">End of script · tap restart to run again</div>
+</div>
+
+<script>
+// =====================================================================
+// STATE
+// =====================================================================
+const S = {
+  voiceMode: 'timed',
+  wpm: 150,
+  fontSize: 52,
+  mirrored: false,
+  countdownOn: true,
+  sensitivity: 55,
+  isPlaying: false,
+  isFullscreen: false,
+  micError: null,
+};
+
+const READING_LINE_PCT = 36; // % from top of screen
+
+// Scroll state
+let scrollDistance = 0;
+let totalScrollHeight = 0;
+let lastTs = null;
+let animId = null;
+let hudInterval = null;
+let hideTimer = null;
+let controlsVisible = true;
+let countdownTimer = null;
+let countdownVal = 0;
+let startWallTime = null;
+let finished = false;
+
+// Voice state
+let micStream = null;
+let audioCtx = null;
+let analyser = null;
+let pcmBuf = null;
+let isSpeaking = false;
+let lastLoudTs = -Infinity;
+let recognition = null;
+
+// Word tracking (voice mode)
+let scriptWords = [];       // normalised words from script
+let wordEls = [];           // span elements for each word
+let matchedIndex = -1;
+let lastHighlightedIndex = -1;
+let heardSnippet = '';
+
+// =====================================================================
+// SETUP SCREEN LOGIC
+// =====================================================================
+const scriptEl = document.getElementById('script-input');
+const wcWords = document.getElementById('wc-words');
+const wcTime  = document.getElementById('wc-time');
+const startBtn = document.getElementById('start-btn');
+
+function updateWordCount() {
+  const words = getWords(scriptEl.value);
+  const wc = words.length;
+  wcWords.textContent = wc + ' words';
+  if (S.voiceMode === 'voice') {
+    wcTime.textContent = 'speed follows your voice';
+  } else {
+    const secs = wc > 0 ? (wc / S.wpm) * 60 : 0;
+    wcTime.textContent = wc > 0 ? '~ ' + fmtTime(secs) + ' at ' + S.wpm + ' wpm' : '';
+  }
+  startBtn.disabled = wc === 0;
+}
+
+scriptEl.addEventListener('input', updateWordCount);
+
+const HINTS = {
+  timed: 'Scrolls at a fixed pace you set below.',
+  silence: 'Scrolls while you\'re talking, freezes the moment you stop.',
+  voice: 'Listens to what you say and follows your exact place in the script.',
+};
+
+function setMode(m) {
+  S.voiceMode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+  document.getElementById('mode-hint').textContent = HINTS[m];
+  const wpmRow = document.getElementById('wpm-row');
+  const sensRow = document.getElementById('sens-row');
+  const wpmLabel = document.getElementById('wpm-label');
+  wpmRow.style.display = m === 'voice' ? 'none' : '';
+  sensRow.style.display = m === 'silence' ? '' : 'none';
+  wpmLabel.textContent = m === 'silence' ? 'Pace while talking' : 'Reading speed';
+  const warn = document.getElementById('mode-warn');
+  if (m === 'voice') {
+    const hasSR = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    warn.textContent = hasSR ? '' : 'Live tracking needs Chrome or Edge. Use Pause on silence for other browsers.';
+  } else {
+    warn.textContent = m !== 'timed' ? 'Needs microphone access — works best when opened in Chrome.' : '';
+  }
+  updateWordCount();
+}
+
+function onWpmChange(v) {
+  S.wpm = parseInt(v);
+  document.getElementById('wpm-val').textContent = v;
+  updateWordCount();
+}
+
+function onSensChange(v) {
+  S.sensitivity = parseInt(v);
+  document.getElementById('sens-val').textContent = v;
+}
+
+function onFsChange(v) {
+  S.fontSize = parseInt(v);
+  document.getElementById('fs-val').textContent = v;
+}
+
+function toggleMirror() {
+  S.mirrored = !S.mirrored;
+  document.getElementById('mirror-btn').classList.toggle('active', S.mirrored);
+}
+
+function toggleCountdown() {
+  S.countdownOn = !S.countdownOn;
+  document.getElementById('countdown-btn').classList.toggle('active', S.countdownOn);
+}
+
+// Init
+updateWordCount();
+
+// =====================================================================
+// PROMPTER ENTRY / EXIT
+// =====================================================================
+async function enterPrompter() {
+  const raw = scriptEl.value.trim();
+  if (!raw) return;
+
+  // Reset scroll state
+  scrollDistance = 0;
+  lastTs = null;
+  matchedIndex = -1;
+  lastHighlightedIndex = -1;
+  heardSnippet = '';
+  finished = false;
+  startWallTime = null;
+  S.micError = null;
+
+  buildTextWrap(raw);
+  setReadingLinePos();
+  showScreen('prompter');
+
+  // Mic init
+  let ok = true;
+  if (S.voiceMode === 'silence') ok = await initSilenceDetection();
+  else if (S.voiceMode === 'voice') ok = initSpeechTracking();
+
+  if (!ok) return; // error overlay shown inside init functions
+
+  if (S.countdownOn) startCountdown(3);
+  else startScroll();
+}
+
+function exitPrompter() {
+  stopScroll();
+  teardownVoice();
+  clearCountdown();
+  showScreen('setup');
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+}
+
+function showScreen(name) {
+  document.getElementById('screen-setup').style.display   = name === 'setup'    ? '' : 'none';
+  document.getElementById('screen-prompter').style.display = name === 'prompter' ? '' : 'none';
+}
+
+// =====================================================================
+// BUILD TEXT WRAP
+// =====================================================================
+function getWords(text) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function normaliseWord(w) {
+  return w.toLowerCase().replace(/[^a-z0-9']/g, '');
+}
+
+function buildTextWrap(raw) {
+  const wrap = document.getElementById('text-wrap');
+  wrap.style.fontSize = S.fontSize + 'px';
+  wrap.className = S.mirrored ? 'mirrored' : '';
+
+  const linePercent = READING_LINE_PCT;
+  wrap.style.paddingTop = linePercent + 'vh';
+
+  wordEls = [];
+  scriptWords = [];
+  const parts = raw.split(/(\s+)/);
+  const frag = document.createDocumentFragment();
+  let wi = 0;
+  parts.forEach(p => {
+    if (!p) return;
+    if (/^\s+$/.test(p)) {
+      frag.appendChild(document.createTextNode(p));
+    } else {
+      const span = document.createElement('span');
+      span.className = 'cue-word';
+      span.textContent = p;
+      frag.appendChild(span);
+      wordEls.push(span);
+      scriptWords.push(normaliseWord(p));
+      wi++;
+    }
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(frag);
+
+  // Measure after paint
+  requestAnimationFrame(() => {
+    const prompter = document.getElementById('screen-prompter');
+    const vh = prompter.clientHeight;
+    totalScrollHeight = wrap.scrollHeight - vh * 0.15;
+    wrap.style.paddingBottom = '60vh';
+    // Re-measure
+    requestAnimationFrame(() => {
+      totalScrollHeight = wrap.scrollHeight - vh * 0.15;
+    });
+  });
+}
+
+function setReadingLinePos() {
+  document.getElementById('reading-line').style.top = READING_LINE_PCT + 'vh';
+}
+
+// =====================================================================
+// SCROLL ENGINE
+// =====================================================================
+function tick(ts) {
+  if (lastTs === null) lastTs = ts;
+  const delta = (ts - lastTs) / 1000;
+  lastTs = ts;
+
+  const total = Math.max(totalScrollHeight, 1);
+  const wordCount = Math.max(scriptWords.length, 1);
+
+  if (S.voiceMode === 'timed') {
+    const pxPerSec = (total * S.wpm) / (60 * wordCount);
+    scrollDistance = Math.min(scrollDistance + pxPerSec * delta, total);
+  } else if (S.voiceMode === 'silence') {
+    sampleSpeaking(ts);
+    if (isSpeaking) {
+      const pxPerSec = (total * S.wpm) / (60 * wordCount);
+      scrollDistance = Math.min(scrollDistance + pxPerSec * delta, total);
+    }
+  } else if (S.voiceMode === 'voice') {
+    const target = computeTargetDistance();
+    scrollDistance += (target - scrollDistance) * 0.12;
+    scrollDistance = Math.max(0, Math.min(scrollDistance, total));
+  }
+
+  applyTransform();
+
+  // End check
+  const isEnd = S.voiceMode === 'voice'
+    ? matchedIndex >= scriptWords.length - 1 && scriptWords.length > 0
+    : scrollDistance >= total;
+
+  if (isEnd) {
+    S.isPlaying = false;
+    finished = true;
+    document.getElementById('finished-tag').style.display = '';
+    setPlayIcon(false);
+    showHUD(true);
+    return;
+  }
+
+  animId = requestAnimationFrame(tick);
+}
+
+function applyTransform() {
+  const wrap = document.getElementById('text-wrap');
+  if (wrap) wrap.style.transform = (S.mirrored ? 'scaleX(-1) ' : '') + 'translateY(-' + scrollDistance + 'px)';
+}
+
+function startScroll() {
+  finished = false;
+  document.getElementById('finished-tag').style.display = 'none';
+  lastTs = null;
+  if (!startWallTime) startWallTime = performance.now();
+  S.isPlaying = true;
+  setPlayIcon(true);
+  animId = requestAnimationFrame(tick);
+  hudInterval = setInterval(updateHUD, 250);
+  resetHideTimer();
+}
+
+function stopScroll() {
+  S.isPlaying = false;
+  cancelAnimationFrame(animId);
+  lastTs = null;
+  clearInterval(hudInterval);
+  setPlayIcon(false);
+  showHUD(true);
+}
+
+function restartScroll() {
+  stopScroll();
+  scrollDistance = 0;
+  lastTs = null;
+  startWallTime = null;
+  matchedIndex = -1;
+  resetHighlights();
+  applyTransform();
+  finished = false;
+  document.getElementById('finished-tag').style.display = 'none';
+  showHUD(true);
+}
+
+function togglePlay() {
+  if (S.isPlaying) stopScroll();
+  else startScroll();
+  resetHideTimer();
+}
+
+function adjustWpm(delta) {
+  S.wpm = Math.min(400, Math.max(60, S.wpm + delta));
+  updateHUD();
+  resetHideTimer();
+}
+
+// =====================================================================
+// HUD
+// =====================================================================
+function fmtTime(secs) {
+  const s = Math.max(0, Math.round(secs || 0));
+  return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+}
+
+function updateHUD() {
+  const wordCount = Math.max(scriptWords.length, 1);
+  const totalSecs = (wordCount / S.wpm) * 60;
+  const elapsed  = totalScrollHeight > 0 ? (scrollDistance / totalScrollHeight) * totalSecs : 0;
+  const wallSecs = startWallTime ? (performance.now() - startWallTime) / 1000 : 0;
+  const hudText  = document.getElementById('hud-text');
+  const speakDot = document.getElementById('speak-dot');
+
+  if (S.voiceMode === 'voice') {
+    speakDot.style.display = 'none';
+    hudText.textContent = fmtTime(wallSecs) + ' · tracking' + (heardSnippet ? ' · "' + heardSnippet + '"' : '');
+  } else if (S.voiceMode === 'silence') {
+    speakDot.style.display = '';
+    speakDot.classList.toggle('active', isSpeaking);
+    hudText.textContent = fmtTime(elapsed) + ' / ' + fmtTime(totalSecs) + ' · ' + (isSpeaking ? 'speaking' : 'listening');
+  } else {
+    speakDot.style.display = 'none';
+    hudText.textContent = fmtTime(elapsed) + ' / ' + fmtTime(totalSecs) + ' · ' + S.wpm + ' wpm';
+  }
+}
+
+function setPlayIcon(playing) {
+  const icon = document.getElementById('play-icon');
+  if (playing) {
+    icon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/>';
+  } else {
+    icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>';
+  }
+}
+
+// Controls visibility
+function showHUD(visible) {
+  controlsVisible = visible;
+  ['hud-top','hud-bottom'].forEach(id => {
+    document.getElementById(id).classList.toggle('hidden', !visible);
+  });
+}
+
+function resetHideTimer() {
+  showHUD(true);
+  clearTimeout(hideTimer);
+  if (S.isPlaying) {
+    hideTimer = setTimeout(() => showHUD(false), 2500);
+  }
+}
+
+function onPrompterTap(e) {
+  if (S.micError) return;
+  if (countdownVal > 0) return;
+  if (document.getElementById('overlay-error').style.display !== 'none') return;
+  togglePlay();
+  resetHideTimer();
+}
+
+// =====================================================================
+// COUNTDOWN
+// =====================================================================
+function startCountdown(n) {
+  document.getElementById('overlay-countdown').style.display = 'flex';
+  countdownVal = n;
+  document.getElementById('countdown-num').textContent = n;
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdownVal--;
+    if (countdownVal <= 0) {
+      clearCountdown();
+      startScroll();
+    } else {
+      document.getElementById('countdown-num').textContent = countdownVal;
+    }
+  }, 800);
+}
+
+function clearCountdown() {
+  clearInterval(countdownTimer);
+  countdownVal = 0;
+  document.getElementById('overlay-countdown').style.display = 'none';
+}
+
+// =====================================================================
+// FULLSCREEN
+// =====================================================================
+function toggleFullscreen() {
+  const el = document.getElementById('screen-prompter');
+  if (!document.fullscreenElement) {
+    el.requestFullscreen().then(() => {
+      S.isFullscreen = true;
+      document.getElementById('fs-icon').innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m0 8v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3m0-8V5a2 2 0 0 0-2-2h-3"/>';
+    }).catch(()=>{});
+  } else {
+    document.exitFullscreen().then(() => {
+      S.isFullscreen = false;
+      document.getElementById('fs-icon').innerHTML = '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>';
+    }).catch(()=>{});
+  }
+}
+
+// =====================================================================
+// MIRROR IN PROMPTER
+// =====================================================================
+function toggleMirrorInPrompter() {
+  S.mirrored = !S.mirrored;
+  document.getElementById('btn-mirror').classList.toggle('mirror-active', S.mirrored);
+  applyTransform();
+}
+
+// =====================================================================
+// VOICE — PAUSE ON SILENCE
+// =====================================================================
+async function initSilenceDetection() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showMicError('Microphone access isn\'t available here. Try opening this file directly in Chrome on your phone.');
+    return false;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    micStream = stream;
+    audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    const src  = audioCtx.createMediaStreamSource(stream);
+    analyser   = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    pcmBuf = new Uint8Array(analyser.fftSize);
+    lastLoudTs = -Infinity;
+    isSpeaking = false;
+    return true;
+  } catch (err) {
+    showMicError('Microphone access was blocked. Tap "Allow" when prompted, or switch to Timed mode.');
+    return false;
+  }
+}
+
+function sampleSpeaking(ts) {
+  if (!analyser || !pcmBuf) return;
+  analyser.getByteTimeDomainData(pcmBuf);
+  let ss = 0;
+  for (let i = 0; i < pcmBuf.length; i++) {
+    const v = (pcmBuf[i] - 128) / 128;
+    ss += v * v;
+  }
+  const rms = Math.sqrt(ss / pcmBuf.length);
+  const threshold = 0.02 + ((100 - S.sensitivity) / 100) * 0.15;
+  if (rms > threshold) lastLoudTs = ts;
+  isSpeaking = ts - lastLoudTs < 400;
+}
+
+// =====================================================================
+// VOICE — LIVE SPEECH TRACKING
+// =====================================================================
+function initSpeechTracking() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    showMicError('Live tracking needs Chrome or Edge. Use Pause on silence instead.');
+    return false;
+  }
+  try {
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-GB';
+    rec.onresult = onSpeechResult;
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        showMicError('Microphone access blocked. Allow access and try again, or switch to Timed mode.');
+      }
+    };
+    rec.onend = () => {
+      if (S.voiceMode === 'voice' && document.getElementById('screen-prompter').style.display !== 'none' && !S.micError) {
+        try { rec.start(); } catch(e) {}
+      }
+    };
+    recognition = rec;
+    rec.start();
+    return true;
+  } catch(e) {
+    showMicError('Could not start speech recognition. Try Pause on silence instead.');
+    return false;
+  }
+}
+
+function onSpeechResult(e) {
+  let transcript = '';
+  for (let i = e.resultIndex; i < e.results.length; i++) {
+    transcript += e.results[i][0].transcript + ' ';
+  }
+  processTranscript(transcript);
+}
+
+function processTranscript(raw) {
+  const heard = raw.toLowerCase().replace(/[^a-z0-9' ]/g,' ').split(/\s+/).map(normaliseWord).filter(Boolean);
+  if (!heard.length) return;
+  heardSnippet = heard.slice(-5).join(' ');
+
+  const recent = heard.slice(-8);
+  const k = recent.length;
+  const start = Math.max(0, matchedIndex - 3);
+  const end   = Math.min(scriptWords.length - 1, matchedIndex + 80);
+  let bestScore = 0, bestPos = -1;
+  for (let p = start; p <= end; p++) {
+    let score = 0;
+    for (let j = 0; j < k; j++) {
+      if (p + j < scriptWords.length && scriptWords[p + j] === recent[j]) score++;
+    }
+    if (score > bestScore) { bestScore = score; bestPos = p; }
+  }
+  const need = Math.max(1, Math.ceil(k * 0.4));
+  if (bestPos >= 0 && bestScore >= need) {
+    const newIdx = Math.min(bestPos + k - 1, scriptWords.length - 1);
+    if (newIdx > matchedIndex) {
+      matchedIndex = newIdx;
+      syncHighlights();
+    }
+  }
+}
+
+function syncHighlights() {
+  const idx  = matchedIndex;
+  const last = lastHighlightedIndex;
+  if (idx > last) {
+    for (let i = last + 1; i <= idx; i++) if (wordEls[i]) wordEls[i].style.opacity = '0.3';
+  } else if (idx < last) {
+    for (let i = idx + 1; i <= last; i++) if (wordEls[i]) wordEls[i].style.opacity = '1';
+  }
+  lastHighlightedIndex = idx;
+}
+
+function resetHighlights() {
+  wordEls.forEach(el => { if (el) el.style.opacity = '1'; });
+  lastHighlightedIndex = -1;
+}
+
+function computeTargetDistance() {
+  const idx = matchedIndex;
+  if (idx < 0 || !wordEls[idx]) return 0;
+  const prompter = document.getElementById('screen-prompter');
+  const lineOffsetPx = (prompter.clientHeight * READING_LINE_PCT) / 100;
+  return Math.max(0, wordEls[idx].offsetTop - lineOffsetPx);
+}
+
+// =====================================================================
+// MIC ERROR
+// =====================================================================
+function showMicError(msg) {
+  S.micError = msg;
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('overlay-error').style.display = 'flex';
+}
+
+function clearMicError() {
+  S.micError = null;
+  document.getElementById('overlay-error').style.display = 'none';
+}
+
+async function retryVoice() {
+  clearMicError();
+  teardownVoice();
+  let ok = true;
+  if (S.voiceMode === 'silence') ok = await initSilenceDetection();
+  else if (S.voiceMode === 'voice') ok = initSpeechTracking();
+  if (ok) { if (S.countdownOn) startCountdown(3); else startScroll(); }
+}
+
+function continueWithoutVoice() {
+  teardownVoice();
+  clearMicError();
+  S.voiceMode = 'timed';
+  document.getElementById('btn-minus').style.display = '';
+  document.getElementById('btn-plus').style.display  = '';
+  if (S.countdownOn) startCountdown(3);
+  else startScroll();
+}
+
+// =====================================================================
+// TEARDOWN
+// =====================================================================
+function teardownVoice() {
+  if (recognition) {
+    try { recognition.onend = null; recognition.onresult = null; recognition.onerror = null; recognition.stop(); } catch(e) {}
+    recognition = null;
+  }
+  if (micStream)  { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (audioCtx)   { try { audioCtx.close(); } catch(e) {} audioCtx = null; }
+  analyser = null; pcmBuf = null;
+}
+
+// =====================================================================
+// KEYBOARD SHORTCUTS
+// =====================================================================
+document.addEventListener('keydown', e => {
+  const inPrompter = document.getElementById('screen-prompter').style.display !== 'none';
+  if (!inPrompter) return;
+  if (e.code === 'Space') { e.preventDefault(); if (countdownVal === 0 && !S.micError) { togglePlay(); resetHideTimer(); } }
+  else if (e.key === 'ArrowUp')   { adjustWpm(10); }
+  else if (e.key === 'ArrowDown') { adjustWpm(-10); }
+  else if (e.key.toLowerCase() === 'm') { toggleMirrorInPrompter(); }
+  else if (e.key === 'Escape') { exitPrompter(); }
+});
+
+// =====================================================================
+// BOTTOM CONTROLS — show/hide speed buttons in voice mode
+// =====================================================================
+function updateBottomControls() {
+  const show = S.voiceMode !== 'voice';
+  document.getElementById('btn-minus').style.display = show ? '' : 'none';
+  document.getElementById('btn-plus').style.display  = show ? '' : 'none';
+}
+
+// Patch enterPrompter to call this
+const _enterPrompter = enterPrompter;
+window.enterPrompter = async function() {
+  updateBottomControls();
+  await _enterPrompter();
+};
+
+// =====================================================================
+// PWA — manifest and service worker injected at runtime
+// =====================================================================
+(function installPWA() {
+  // Generate a simple icon via canvas
+  function makeIcon(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, size, size);
+    // red dot
+    ctx.fillStyle = '#e8483a';
+    ctx.beginPath();
+    ctx.arc(size * 0.22, size * 0.52, size * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+    // "Cue" text
+    ctx.fillStyle = '#f5f3ef';
+    ctx.font = 'bold ' + Math.round(size * 0.38) + 'px system-ui,sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Cue', size * 0.33, size * 0.52);
+    return c.toDataURL('image/png');
+  }
+
+  const icon192 = makeIcon(192);
+  const icon512 = makeIcon(512);
+
+  const manifest = {
+    name: 'Cue Teleprompter',
+    short_name: 'Cue',
+    description: 'Voice-driven teleprompter',
+    start_url: './',
+    display: 'standalone',
+    background_color: '#0a0a0a',
+    theme_color: '#0a0a0a',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ]
+  };
+
+  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+  document.getElementById('pwa-manifest').href = URL.createObjectURL(blob);
+
+  // Minimal service worker for offline support
+  if ('serviceWorker' in navigator) {
+    const swCode = `
+const CACHE = 'cue-v1';
+self.addEventListener('install', e => { self.skipWaiting(); });
+self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
+self.addEventListener('fetch', e => {
+  e.respondWith(
+    caches.open(CACHE).then(cache =>
+      cache.match(e.request).then(hit => {
+        const fetch_ = fetch(e.request).then(r => { cache.put(e.request, r.clone()); return r; }).catch(()=>null);
+        return hit || fetch_;
+      })
+    )
+  );
+});`;
+    const swBlob = new Blob([swCode], { type: 'text/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
